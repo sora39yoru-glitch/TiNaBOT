@@ -58,3 +58,26 @@ cron.schedule('0 0 * * *', () => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+
+// --- 自動コマンド登録用（起動時に1回だけ実行されます） ---
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v9');
+const { SlashCommandBuilder } = require('@discordjs/builders');
+
+const commands = [
+  new SlashCommandBuilder().setName('set-notify').setDescription('通知チャンネルを設定します').addChannelOption(option => option.setName('channel').setDescription('対象のチャンネル').setRequired(true)),
+  new SlashCommandBuilder().setName('set-birthday').setDescription('誕生日を登録します').addUserOption(option => option.setName('user').setDescription('対象ユーザー').setRequired(true)).addStringOption(option => option.setName('date').setDescription('日付(例: 05-23)').setRequired(true))
+].map(command => command.toJSON());
+
+const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+    console.log('★ スラッシュコマンドの自動登録が完了しました！');
+  } catch (error) {
+    console.error('コマンド登録エラー:', error);
+  }
+})();
+
