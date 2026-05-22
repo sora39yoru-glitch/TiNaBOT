@@ -57,3 +57,12 @@ http.createServer((req, res) => {
   res.write("I am alive!");
   res.end();
 }).listen(8080);
+
+// サーバーを立ててUptimeRobotの呼びかけに応答する
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.write("I am alive!");
+  res.end();
+}).listen(8080);
+
