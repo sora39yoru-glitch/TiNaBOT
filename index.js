@@ -66,3 +66,25 @@ http.createServer((req, res) => {
   res.end();
 }).listen(8080);
 
+const { SlashCommandBuilder } = require('@discordjs/builders');
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v9');
+require('dotenv').config();
+
+const commands = [
+  new SlashCommandBuilder().setName('set-notify').setDescription('通知チャンネルを設定します').addChannelOption(option => option.setName('channel').setDescription('対象のチャンネル').setRequired(true)),
+  new SlashCommandBuilder().setName('set-birthday').setDescription('誕生日を登録します').addUserOption(option => option.setName('user').setDescription('対象ユーザー').setRequired(true)).addStringOption(option => option.setName('date').setDescription('日付(例: 05-23)').setRequired(true))
+].map(command => command.toJSON());
+
+const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+    console.log('スラッシュコマンドの登録に成功しました！');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+
