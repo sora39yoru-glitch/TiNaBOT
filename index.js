@@ -49,3 +49,11 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 
 client.on('ready', () => console.log('Bot is online!'));
 client.login(process.env.DISCORD_TOKEN);
+
+
+// --- サーバー起動用（UptimeRobot対策） ---
+const http = require('http');
+http.createServer((req, res) => {
+  res.write("I am alive!");
+  res.end();
+}).listen(8080);
