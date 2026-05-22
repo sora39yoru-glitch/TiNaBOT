@@ -31,7 +31,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     const randomMsg = messages[Math.floor(Math.random() * messages.length)];
     
     // 【重要】ここに通知させたいチャンネルIDを入れ替えてください！
-    const notifyChannel = client.channels.cache.get('123456789012345678'); 
+    const notifyChannel = client.channels.cache.get('1172895472021684375'); 
     
     if (notifyChannel) {
       const embed = new EmbedBuilder()
