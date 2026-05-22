@@ -1,90 +1,60 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const http = require('http');
-
-// RenderのWebサーバー用（これがないとRenderが止まるため必要です）
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Bot is running');
-}).listen(process.env.PORT || 3000);
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-// 魂の宿る通知メッセージ
-const messages = [
-  "が無窮の静寂を切り裂き、通話の深淵へ降り立ちました。彼/彼女が求めるは、混沌か、それとも安らぎか。",
-  "なる魂が、通話という名の迷宮に迷い込みました。誰か、その光なき道を照らしてあげようとする者はおりませぬか？",
-  "の降臨です。鼓膜を揺らす声の調べを求める者がまた一人。宴の準備は整いました。",
-  "が、この閉ざされた楽園の扉を開きました。さぁ、共に語り、共に夢を語らいましょう。"
-];
-
-client.on('voiceStateUpdate', (oldState, newState) => {
-  // 通話に入ったときだけ（かつ、bot自身ではないとき）
-  if (!oldState.channelId && newState.channelId && !newState.member.user.bot) {
-    const user = newState.member.user;
-    const randomMsg = messages[Math.floor(Math.random() * messages.length)];
-    
-    // 【重要】ここに通知させたいチャンネルIDを入れ替えてください！
-    const notifyChannel = client.channels.cache.get('1172895472021684375'); 
-    
-    if (notifyChannel) {
-      const embed = new EmbedBuilder()
-        .setColor('#800080')
-        .setTitle('--- 異邦人の来訪 ---')
-        .setDescription(`<@${user.id}>${randomMsg}`)
-        .setThumbnail(user.displayAvatarURL())
-        .setFooter({ text: '通話の宴は、幕を開けたばかりである。' })
-        .setTimestamp();
-
-      notifyChannel.send({ content: '@everyone', embeds: [embed] });
-    }
-  }
-});
-
-client.on('ready', () => console.log('Bot is online!'));
-client.login(process.env.DISCORD_TOKEN);
-
-
-// --- サーバー起動用（UptimeRobot対策） ---
-const http = require('http');
-http.createServer((req, res) => {
-  res.write("I am alive!");
-  res.end();
-}).listen(8080);
-
-// サーバーを立ててUptimeRobotの呼びかけに応答する
-const http = require('http');
-http.createServer((req, res) => {
-  res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.write("I am alive!");
-  res.end();
-}).listen(8080);
-
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v9');
+const fs = require('fs');
+const cron = require('node-cron');
 require('dotenv').config();
 
-const commands = [
-  new SlashCommandBuilder().setName('set-notify').setDescription('通知チャンネルを設定します').addChannelOption(option => option.setName('channel').setDescription('対象のチャンネル').setRequired(true)),
-  new SlashCommandBuilder().setName('set-birthday').setDescription('誕生日を登録します').addUserOption(option => option.setName('user').setDescription('対象ユーザー').setRequired(true)).addStringOption(option => option.setName('date').setDescription('日付(例: 05-23)').setRequired(true))
-].map(command => command.toJSON());
+// Webサーバー起動（Render用）
+http.createServer((req, res) => { res.write("I am alive!"); res.end(); }).listen(process.env.PORT || 8080);
 
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-(async () => {
-  try {
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log('スラッシュコマンドの登録に成功しました！');
-  } catch (error) {
-    console.error(error);
-  }
-})();
+const DATA_FILE = './data.json';
+const loadData = () => fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DATA_FILE)) : { notifyChannel: null, birthdays: {} };
+const saveData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
+// 通話通知
+client.on('voiceStateUpdate', (oldState, newState) => {
+    if (!oldState.channelId && newState.channelId && !newState.member.user.bot) {
+        const data = loadData();
+        const notifyChannel = client.channels.cache.get(data.notifyChannel);
+        if (notifyChannel) {
+            notifyChannel.send({ embeds: [new EmbedBuilder().setColor('#800080').setDescription(`<@${newState.member.user.id}> が通話に参加しました！`)] });
+        }
+    }
+});
 
+// スラッシュコマンド処理
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+    const data = loadData();
+
+    if (interaction.commandName === 'set-notify') {
+        data.notifyChannel = interaction.options.getChannel('channel').id;
+        saveData(data);
+        await interaction.reply('通知チャンネルを設定しました！');
+    }
+    if (interaction.commandName === 'set-birthday') {
+        const user = interaction.options.getUser('user');
+        const date = interaction.options.getString('date');
+        data.birthdays[user.id] = { name: user.username, date: date };
+        saveData(data);
+        await interaction.reply(`${user.username} さんの誕生日を ${date} に登録しました！`);
+    }
+});
+
+// 毎日0時に誕生日チェック
+cron.schedule('0 0 * * *', () => {
+    const data = loadData();
+    const today = new Date().toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '-');
+    const channel = client.channels.cache.get(data.notifyChannel);
+    if (!channel) return;
+
+    for (const userId in data.birthdays) {
+        if (data.birthdays[userId].date === today) {
+            channel.send(`🎉 今日は ${data.birthdays[userId].name} さんのお誕生日です！おめでとう！`);
+        }
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
