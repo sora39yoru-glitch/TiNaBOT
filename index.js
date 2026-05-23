@@ -103,3 +103,30 @@ const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
         console.log('★ スラッシュコマンドの自動登録が完了しました！');
     } catch (e) { console.error(e); }
 })();
+
+
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+    
+    // 【修正】まずは「処理中」というステータスをDiscordに送る
+    await interaction.deferReply({ ephemeral: false }); 
+    
+    const data = loadData();
+
+    if (interaction.commandName === 'setvc') {
+        data.notifyChannel = interaction.options.getChannel('channel').id;
+        saveData(data);
+        await interaction.editReply('通知チャンネルを更新しました！'); // 【修正】replyからeditReplyに変更
+    }
+    if (interaction.commandName === 'birthday') {
+        const sub = interaction.options.getSubcommand();
+        if (sub === 'register') {
+            const user = interaction.options.getUser('user');
+            const date = interaction.options.getString('date');
+            data.birthdays[user.id] = { name: user.username, date: date };
+            saveData(data);
+            await interaction.editReply(`${user.username} さんの誕生日を ${date} に登録しました！`); // 【修正】editReplyに変更
+        }
+    }
+});
+
