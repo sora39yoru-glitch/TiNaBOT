@@ -88,3 +88,29 @@ const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     } catch (e) { console.error(e); }
 })();
+
+// interactionCreate の部分をこれに差し替えてください
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    // ★重要：ここで先に「処理中」という回答をDiscordに送信します
+    await interaction.deferReply(); 
+
+    const data = loadData();
+    if (interaction.commandName === 'setvc') {
+        data.notifyChannel = interaction.options.getChannel('channel').id;
+        saveData(data);
+        await interaction.editReply('通知チャンネルを更新しました！'); // ★replyではなくeditReplyを使う
+    } else if (interaction.commandName === 'birthday') {
+        const sub = interaction.options.getSubcommand();
+        if (sub === 'register') {
+            const user = interaction.options.getUser('user');
+            const date = interaction.options.getString('date');
+            data.birthdays[user.id] = { name: user.username, date: date };
+            saveData(data);
+            await interaction.editReply(`${user.username} さんの誕生日を ${date} に登録しました！`);
+        }
+    }
+});
+
+
