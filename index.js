@@ -81,3 +81,24 @@ const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
   }
 })();
 
+// コマンド登録部分をこのように修正
+const commands = [
+  new SlashCommandBuilder().setName('setvc').setDescription('通知チャンネルを設定します').addChannelOption(option => option.setName('channel').setDescription('対象のチャンネル').setRequired(true)),
+  new SlashCommandBuilder().setName('birthday').setDescription('誕生日を登録します').addSubcommand(sub => sub.setName('register').addUserOption(o => o.setName('user').setDescription('ユーザー')).addStringOption(o => o.setName('date').setDescription('日付(05-23)')))
+].map(command => command.toJSON());
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isCommand()) return;
+  
+  // setvc を使うように変更
+  if (interaction.commandName === 'setvc') {
+    // 既存の処理...
+  }
+  // birthday コマンドの処理
+  if (interaction.commandName === 'birthday') {
+     // 既存の処理...
+  }
+});
+
+
+
