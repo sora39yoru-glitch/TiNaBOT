@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const http = require('http');
 const fs = require('fs');
 const cron = require('node-cron');
@@ -7,6 +7,7 @@ const { Routes } = require('discord-api-types/v9');
 const { SlashCommandBuilder } = require('@discordjs/builders');
 require('dotenv').config();
 
+// Webサーバー（Render用）
 http.createServer((req, res) => { res.write("I am alive!"); res.end(); }).listen(process.env.PORT || 8080);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -14,10 +15,10 @@ const DATA_FILE = './data.json';
 const loadData = () => fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DATA_FILE)) : {};
 const saveData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-// メッセージ集
-const notifyMsgs = ["が通話の深淵へ降り立ちました。", "なる魂が迷い込みました。", "の降臨です。"];
-const bdayMsgs = ["🎉 今日は ${name} さんのお誕生日です！", "🎂 ${name} さんの記念すべき日です！"];
+const notifyMsgs = ["が通話の深淵へ降り立ちました。", "なる魂が迷い込みました。", "の降臨です。宴の準備は整いました。"];
+const bdayMsgs = ["🎉 今日は ${name} さんのお誕生日です！素晴らしい一年になりますように！", "🎂 ${name} さんの記念すべき日！心からお祝い申し上げます。", "✨ 本日は ${name} さんの特別な記念日です！"];
 
+// 通話通知
 client.on('voiceStateUpdate', (oldState, newState) => {
     if (!oldState.channelId && newState.channelId && !newState.member.user.bot) {
         const data = loadData();
@@ -32,60 +33,80 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     }
 });
 
+// コマンド処理
 client.on('interactionCreate', async interaction => {
-    if (interaction.isCommand()) {
-        const data = loadData();
-        const guildId = interaction.guildId;
-        if (!data[guildId]) data[guildId] = { notifyChannel: null, birthdays: {} };
+    const data = loadData();
+    const guildId = interaction.guildId;
+    if (!data[guildId]) data[guildId] = { notifyChannel: null, birthdays: {} };
 
+    if (interaction.isCommand()) {
         if (interaction.commandName === 'setvc') {
             data[guildId].notifyChannel = interaction.options.getChannel('channel').id;
             saveData(data);
-            await interaction.reply('このサーバーの通知チャンネルを設定しました！');
+            await interaction.reply('通知チャンネルを設定しました！');
         } else if (interaction.commandName === 'birthday') {
             const sub = interaction.options.getSubcommand();
             if (sub === 'register') {
                 const user = interaction.options.getUser('user');
                 const date = interaction.options.getString('date');
-                // 一時的にデータを保存（ボタン押下後に確定させるためにIDを保存）
                 data[guildId].temp = { userId: user.id, username: user.username, date: date };
                 saveData(data);
-                
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('confirm_bday').setLabel('登録を確定する').setStyle(ButtonStyle.Success)
-                );
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('confirm_bday').setLabel('登録を確定する').setStyle(ButtonStyle.Success));
                 await interaction.reply({ content: `${user.username} さんの誕生日を ${date} に登録しますか？`, components: [row] });
+            } else if (sub === 'list') {
+                const list = Object.values(data[guildId].birthdays).map(b => `${b.name}: ${b.date}`).join('\n') || '登録はありません。';
+                await interaction.reply(`🎂 **登録済み誕生日一覧**:\n${list}`);
+            } else if (sub === 'delete') {
+                const user = interaction.options.getUser('user');
+                if (data[guildId].birthdays[user.id]) {
+                    delete data[guildId].birthdays[user.id];
+                    saveData(data);
+                    await interaction.reply(`${user.username} さんのデータを削除しました。`);
+                } else {
+                    await interaction.reply('そのユーザーは登録されていません。');
+                }
             }
         }
-    } else if (interaction.isButton()) {
-        if (interaction.customId === 'confirm_bday') {
-            const data = loadData();
-            const guildId = interaction.guildId;
-            const temp = data[guildId].temp;
-            if (temp) {
-                data[guildId].birthdays[temp.userId] = { name: temp.username, date: temp.date };
-                delete data[guildId].temp;
-                saveData(data);
-                await interaction.update({ content: `✅ ${temp.username} さんの誕生日を登録しました！`, components: [] });
-            }
+    } else if (interaction.isButton() && interaction.customId === 'confirm_bday') {
+        const temp = data[guildId].temp;
+        if (temp) {
+            data[guildId].birthdays[temp.userId] = { name: temp.username, date: temp.date };
+            delete data[guildId].temp;
+            saveData(data);
+            await interaction.update({ content: `✅ ${temp.username} さんの誕生日を登録しました！`, components: [] });
         }
     }
 });
 
+// 誕生日自動通知
 cron.schedule('0 0 * * *', () => {
     const data = loadData();
     const today = new Date().toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '-');
-    for (const guildId in data) {
-        const guildData = data[guildId];
-        const channel = client.channels.cache.get(guildData.notifyChannel);
-        if (!channel) continue;
-        for (const userId in guildData.birthdays) {
-            if (guildData.birthdays[userId].date === today) {
-                const name = guildData.birthdays[userId].name;
-                channel.send(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', name));
+    for (const gid in data) {
+        const ch = client.channels.cache.get(data[gid].notifyChannel);
+        if (ch) {
+            for (const uid in data[gid].birthdays) {
+                if (data[gid].birthdays[uid].date === today) {
+                    const name = data[gid].birthdays[uid].name;
+                    ch.send(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', name));
+                }
             }
         }
     }
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+// コマンド登録
+const commands = [
+    new SlashCommandBuilder().setName('setvc').setDescription('通知設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
+    new SlashCommandBuilder().setName('birthday').setDescription('誕生日機能')
+        .addSubcommand(s => s.setName('register').setDescription('登録').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)).addStringOption(o => o.setName('date').setDescription('MM-DD').setRequired(true)))
+        .addSubcommand(s => s.setName('list').setDescription('一覧表示'))
+        .addSubcommand(s => s.setName('delete').setDescription('削除').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)))
+].map(c => c.toJSON());
+
+const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+(async () => {
+    try { await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands }); } catch (e) { console.error(e); }
+})();
