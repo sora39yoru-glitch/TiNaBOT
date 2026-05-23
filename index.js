@@ -7,7 +7,7 @@ const { Routes } = require('discord-api-types/v9');
 const { SlashCommandBuilder } = require('@discordjs/builders');
 require('dotenv').config();
 
-// Webサーバー
+// Webサーバー（Render等の運用対策）
 http.createServer((req, res) => { res.write("I am alive!"); res.end(); }).listen(process.env.PORT || 8080);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -15,10 +15,16 @@ const DATA_FILE = './data.json';
 const loadData = () => fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DATA_FILE)) : {};
 const saveData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-const notifyMsgs = ["が通話の深淵へ降り立ちました。", "なる魂が迷い込みました。", "の降臨です。宴の準備は整いました。"];
+const notifyMsgs = [
+    "が通話の深淵へ降り立ちました。",
+    "なる魂が迷い込みました。",
+    "の降臨です。宴の準備は整いました。",
+    "が静寂を破り、この閉ざされた楽園の扉を開きました。",
+    "が迷宮の入り口を見つけ、足を踏み入れました。"
+];
 const bdayMsgs = ["🎉 今日は ${name} さんのお誕生日です！", "🎂 ${name} さんの記念すべき日！", "✨ 本日は ${name} さんの特別な記念日です！"];
 
-// 通話通知（Embed形式へ修正）
+// 通話通知：アイコンが右に埋まるEmbed形式
 client.on('voiceStateUpdate', async (oldState, newState) => {
     if (!oldState.channelId && newState.channelId && !newState.member.user.bot) {
         const data = loadData();
@@ -26,19 +32,23 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         if (guildData && guildData.notifyChannel) {
             const channel = newState.guild.channels.cache.get(guildData.notifyChannel);
             if (channel) {
+                const user = newState.member.user;
                 const msg = notifyMsgs[Math.floor(Math.random() * notifyMsgs.length)];
+                
                 const embed = new EmbedBuilder()
                     .setTitle('--- 異邦の来訪 ---')
-                    .setAuthor({ name: newState.member.displayName, iconURL: newState.member.user.displayAvatarURL() })
-                    .setDescription(`<@${newState.member.id}>${msg}\n通話の宴は、幕を開けたばかりである。`)
+                    .setAuthor({ name: newState.member.displayName, iconURL: user.displayAvatarURL() })
+                    .setDescription(`<@${user.id}>${msg}\n通話の宴は、幕を開けたばかりである。`)
+                    .setThumbnail(user.displayAvatarURL()) // アイコンを右側に大きく配置
                     .setColor(0x7289da);
-                channel.send({ embeds: [embed] });
+                    
+                channel.send({ content: '@everyone', embeds: [embed] });
             }
         }
     }
 });
 
-// インタラクション処理
+// コマンド・インタラクション処理
 client.on('interactionCreate', async interaction => {
     const data = loadData();
     const guildId = interaction.guildId;
@@ -96,6 +106,7 @@ cron.schedule('0 0 * * *', () => {
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: b.name, iconURL: b.iconURL })
                         .setDescription(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', b.name))
+                        .setThumbnail(b.iconURL)
                         .setColor(0xffd700);
                     ch.send({ embeds: [embed] });
                 }
@@ -103,5 +114,19 @@ cron.schedule('0 0 * * *', () => {
         }
     }
 });
+
+// コマンド登録
+const commands = [
+    new SlashCommandBuilder().setName('setvc').setDescription('通知チャンネル設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
+    new SlashCommandBuilder().setName('birthday').setDescription('誕生日機能')
+        .addSubcommand(s => s.setName('register').setDescription('登録').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)).addStringOption(o => o.setName('date').setDescription('MM-DD').setRequired(true)))
+        .addSubcommand(s => s.setName('list').setDescription('一覧表示'))
+        .addSubcommand(s => s.setName('delete').setDescription('削除').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)))
+].map(c => c.toJSON());
+
+const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+(async () => {
+    try { await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands }); } catch (e) { console.error(e); }
+})();
 
 client.login(process.env.DISCORD_TOKEN);
