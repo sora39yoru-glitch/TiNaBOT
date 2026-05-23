@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const http = require('http');
 const fs = require('fs');
 const cron = require('node-cron');
@@ -7,7 +7,7 @@ const { Routes } = require('discord-api-types/v9');
 const { SlashCommandBuilder } = require('@discordjs/builders');
 require('dotenv').config();
 
-// Webサーバー（Render用）
+// Webサーバー
 http.createServer((req, res) => { res.write("I am alive!"); res.end(); }).listen(process.env.PORT || 8080);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -16,10 +16,10 @@ const loadData = () => fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DAT
 const saveData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
 const notifyMsgs = ["が通話の深淵へ降り立ちました。", "なる魂が迷い込みました。", "の降臨です。宴の準備は整いました。"];
-const bdayMsgs = ["🎉 今日は ${name} さんのお誕生日です！素晴らしい一年になりますように！", "🎂 ${name} さんの記念すべき日！心からお祝い申し上げます。", "✨ 本日は ${name} さんの特別な記念日です！"];
+const bdayMsgs = ["🎉 今日は ${name} さんのお誕生日です！", "🎂 ${name} さんの記念すべき日！", "✨ 本日は ${name} さんの特別な記念日です！"];
 
-// 通話通知
-client.on('voiceStateUpdate', (oldState, newState) => {
+// 通話通知（Embed形式へ修正）
+client.on('voiceStateUpdate', async (oldState, newState) => {
     if (!oldState.channelId && newState.channelId && !newState.member.user.bot) {
         const data = loadData();
         const guildData = data[newState.guild.id];
@@ -27,13 +27,18 @@ client.on('voiceStateUpdate', (oldState, newState) => {
             const channel = newState.guild.channels.cache.get(guildData.notifyChannel);
             if (channel) {
                 const msg = notifyMsgs[Math.floor(Math.random() * notifyMsgs.length)];
-                channel.send(`<@${newState.member.user.id}>${msg}`);
+                const embed = new EmbedBuilder()
+                    .setTitle('--- 異邦の来訪 ---')
+                    .setAuthor({ name: newState.member.displayName, iconURL: newState.member.user.displayAvatarURL() })
+                    .setDescription(`<@${newState.member.id}>${msg}\n通話の宴は、幕を開けたばかりである。`)
+                    .setColor(0x7289da);
+                channel.send({ embeds: [embed] });
             }
         }
     }
 });
 
-// コマンド処理
+// インタラクション処理
 client.on('interactionCreate', async interaction => {
     const data = loadData();
     const guildId = interaction.guildId;
@@ -49,7 +54,7 @@ client.on('interactionCreate', async interaction => {
             if (sub === 'register') {
                 const user = interaction.options.getUser('user');
                 const date = interaction.options.getString('date');
-                data[guildId].temp = { userId: user.id, username: user.username, date: date };
+                data[guildId].temp = { userId: user.id, username: user.username, iconURL: user.displayAvatarURL(), date: date };
                 saveData(data);
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('confirm_bday').setLabel('登録を確定する').setStyle(ButtonStyle.Success));
                 await interaction.reply({ content: `${user.username} さんの誕生日を ${date} に登録しますか？`, components: [row] });
@@ -70,7 +75,7 @@ client.on('interactionCreate', async interaction => {
     } else if (interaction.isButton() && interaction.customId === 'confirm_bday') {
         const temp = data[guildId].temp;
         if (temp) {
-            data[guildId].birthdays[temp.userId] = { name: temp.username, date: temp.date };
+            data[guildId].birthdays[temp.userId] = { name: temp.username, date: temp.date, iconURL: temp.iconURL };
             delete data[guildId].temp;
             saveData(data);
             await interaction.update({ content: `✅ ${temp.username} さんの誕生日を登録しました！`, components: [] });
@@ -87,8 +92,12 @@ cron.schedule('0 0 * * *', () => {
         if (ch) {
             for (const uid in data[gid].birthdays) {
                 if (data[gid].birthdays[uid].date === today) {
-                    const name = data[gid].birthdays[uid].name;
-                    ch.send(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', name));
+                    const b = data[gid].birthdays[uid];
+                    const embed = new EmbedBuilder()
+                        .setAuthor({ name: b.name, iconURL: b.iconURL })
+                        .setDescription(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', b.name))
+                        .setColor(0xffd700);
+                    ch.send({ embeds: [embed] });
                 }
             }
         }
@@ -96,17 +105,3 @@ cron.schedule('0 0 * * *', () => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-
-// コマンド登録
-const commands = [
-    new SlashCommandBuilder().setName('setvc').setDescription('通知設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
-    new SlashCommandBuilder().setName('birthday').setDescription('誕生日機能')
-        .addSubcommand(s => s.setName('register').setDescription('登録').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)).addStringOption(o => o.setName('date').setDescription('MM-DD').setRequired(true)))
-        .addSubcommand(s => s.setName('list').setDescription('一覧表示'))
-        .addSubcommand(s => s.setName('delete').setDescription('削除').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)))
-].map(c => c.toJSON());
-
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
-(async () => {
-    try { await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands }); } catch (e) { console.error(e); }
-})();
