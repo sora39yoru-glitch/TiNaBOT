@@ -54,7 +54,7 @@ client.on('interactionCreate', async interaction => {
     
     const data = loadData();
     const guildId = interaction.guildId;
-    if (!data[guildId]) data[guildId] = { notifyChannel: null, birthdays: {} };
+    if (!data[guildId]) data[guildId] = { notifyChannel: null, bdayChannel: null, birthdays: {} };
 
     if (interaction.isCommand()) {
         const { commandName } = interaction;
@@ -62,12 +62,13 @@ client.on('interactionCreate', async interaction => {
         if (commandName === 'setvc') {
             data[guildId].notifyChannel = interaction.options.getChannel('channel').id;
             saveData(data);
-            await interaction.reply('通知チャンネルを設定しました！');
-        } 
-        
-        else if (commandName === 'birthday') {
+            await interaction.reply('通話通知チャンネルを設定しました！');
+        } else if (commandName === 'setbirthdayvc') {
+            data[guildId].bdayChannel = interaction.options.getChannel('channel').id;
+            saveData(data);
+            await interaction.reply('誕生日通知チャンネルを設定しました！');
+        } else if (commandName === 'birthday') {
             const sub = interaction.options.getSubcommand();
-            
             if (sub === 'register') {
                 const user = interaction.options.getUser('user');
                 const date = interaction.options.getString('date');
@@ -75,12 +76,10 @@ client.on('interactionCreate', async interaction => {
                 saveData(data);
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('confirm_bday').setLabel('登録を確定する').setStyle(ButtonStyle.Success));
                 await interaction.reply({ content: `${user.username} さんの誕生日を ${date} に登録しますか？`, components: [row] });
-            } 
-            else if (sub === 'list') {
+            } else if (sub === 'list') {
                 const list = Object.values(data[guildId].birthdays).map(b => `${b.name}: ${b.date}`).join('\n') || '登録はありません。';
                 await interaction.reply(`🎂 **登録済み誕生日一覧**:\n${list}`);
-            } 
-            else if (sub === 'delete') {
+            } else if (sub === 'delete') {
                 const user = interaction.options.getUser('user');
                 if (data[guildId].birthdays[user.id]) {
                     delete data[guildId].birthdays[user.id];
@@ -89,12 +88,11 @@ client.on('interactionCreate', async interaction => {
                 } else {
                     await interaction.reply('そのユーザーは登録されていません。');
                 }
-            } 
-            else if (sub === 'test') {
+            } else if (sub === 'test') {
                 const user = interaction.options.getUser('user');
                 const bday = data[guildId].birthdays[user.id];
                 if (bday) {
-                    const ch = interaction.guild.channels.cache.get(data[guildId].notifyChannel);
+                    const ch = interaction.guild.channels.cache.get(data[guildId].bdayChannel);
                     if (ch) {
                         const embed = new EmbedBuilder()
                             .setAuthor({ name: bday.name, iconURL: bday.iconURL })
@@ -104,7 +102,7 @@ client.on('interactionCreate', async interaction => {
                         await ch.send({ embeds: [embed] });
                         await interaction.reply('テスト通知を送信しました！');
                     } else {
-                        await interaction.reply('通知チャンネルが設定されていません。');
+                        await interaction.reply('誕生日用通知チャンネルが設定されていません。');
                     }
                 } else {
                     await interaction.reply('そのユーザーは登録されていません。');
@@ -122,9 +120,32 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// 誕生日自動通知
+cron.schedule('0 0 * * *', () => {
+    const data = loadData();
+    const today = new Date().toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '-');
+    for (const gid in data) {
+        const ch = client.channels.cache.get(data[gid].bdayChannel);
+        if (ch) {
+            for (const uid in data[gid].birthdays) {
+                if (data[gid].birthdays[uid].date === today) {
+                    const b = data[gid].birthdays[uid];
+                    const embed = new EmbedBuilder()
+                        .setAuthor({ name: b.name, iconURL: b.iconURL })
+                        .setDescription(bdayMsgs[Math.floor(Math.random() * bdayMsgs.length)].replace('${name}', b.name))
+                        .setThumbnail(b.iconURL)
+                        .setColor(0xffd700);
+                    ch.send({ embeds: [embed] });
+                }
+            }
+        }
+    }
+});
+
 // コマンド登録
 const commands = [
-    new SlashCommandBuilder().setName('setvc').setDescription('通知チャンネル設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
+    new SlashCommandBuilder().setName('setvc').setDescription('通話通知チャンネル設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
+    new SlashCommandBuilder().setName('setbirthdayvc').setDescription('誕生日通知チャンネル設定').addChannelOption(o => o.setName('channel').setDescription('ch').setRequired(true)),
     new SlashCommandBuilder().setName('birthday').setDescription('誕生日機能')
         .addSubcommand(s => s.setName('register').setDescription('登録').addUserOption(o => o.setName('user').setDescription('人').setRequired(true)).addStringOption(o => o.setName('date').setDescription('MM-DD').setRequired(true)))
         .addSubcommand(s => s.setName('list').setDescription('一覧確認'))
